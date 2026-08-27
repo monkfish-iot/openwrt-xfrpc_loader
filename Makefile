@@ -40,7 +40,7 @@ PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/monkfish-iot/xfrpc_loader.git
 PKG_SOURCE_VERSION:=main
 PKG_SOURCE_DATE:=2026-08-26
-PKG_MIRROR_HASH:=
+PKG_MIRROR_HASH:=skip
 
 PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_SOURCE_SUBDIR)
@@ -66,7 +66,7 @@ include $(INCLUDE_DIR)/package.mk
 define Package/$(PKG_NAME)
   SECTION:=Monkfish
   CATEGORY:=Monkfish Softwares
-  DEPENDS:=+libevent2 +libcurl +libjson-c $(SKEY_PKG_DEPS) +libopenssl
+  DEPENDS:=+libevent2 +libcurl +libjson-c $(SKEY_PKG_DEPS) +libopenssl +luci-mod-rpc
   TITLE:=xfrpc loader daemon (built from git)
   URL:=https://github.com/monkfish-iot/xfrpc_loader
 endef
