@@ -38,7 +38,7 @@ PKG_MAINTAINER:=Monkfish <5747844@qq.com>
 # GIT=1（默认）：PKG_SOURCE_PROTO:=git 时，OpenWrt 会按 PKG_SOURCE_VERSION
 #   克隆 xfrpc_loader 仓库，克隆后内容放在 $(PKG_BUILD_DIR)。
 # GIT=0：不下载源码，直接使用本目录 src/ 下的本地源码。
-GIT ?= 0
+GIT ?= 1
 
 ifeq ($(GIT),1)
 PKG_SOURCE_PROTO:=git
