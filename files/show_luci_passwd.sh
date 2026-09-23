@@ -43,21 +43,57 @@ if ! command -v curl >/dev/null 2>&1; then
 fi
 
 # 2. 调用认证服务接口获取明文密码
-RESP=$(curl -fsS --connect-timeout 5 -m 10 \
-	"${AUTH_BASE}/api/password" 2>/dev/null) || {
-	log_err "failed to query ${AUTH_BASE}/api/password (is xfrpc_loader running?)"
-	exit 1
-}
-
-# 3. 解析 JSON 中的 password 字段（busybox 无 jq，用 sed 提取）
-PASSWORD=$(echo "$RESP" | sed -n 's/.*"password":"\([^"]*\)".*/\1/p')
-
-if [ -z "$PASSWORD" ]; then
-	log_err "no password in response: $RESP"
-	log_err "device not initialized yet (use default root password)"
+#    不使用 -f：-f 会在 4xx/5xx 时吞掉响应体，看不到服务端给出的具体原因
+#    （404=未初始化，500=解密失败），只能笼统报 "is xfrpc_loader running?"。
+#    用 -w 在 body 后追加一行 HTTP 状态码，自行判定并把服务端 JSON 原样带出。
+RESP=$(curl -sS --connect-timeout 5 -m 10 \
+	-w '
+%{http_code}' "${AUTH_BASE}/api/password" 2>/dev/null)
+RC=$?
+if [ "$RC" -ne 0 ]; then
+	# curl 退出码 7 = 连接被拒/连不上（进程确实没监听时）
+	if [ "$RC" -eq 7 ]; then
+		log_err "cannot connect ${AUTH_BASE}/api/password (is xfrpc_loader running?)"
+	else
+		# 28=超时（单线程事件循环被阻塞时也会出现：端口在 LISTEN 但无人应答）
+		log_err "query ${AUTH_BASE}/api/password failed (curl exit $RC)"
+	fi
 	exit 1
 fi
 
-# 4. 输出明文密码
+HTTP_CODE=$(printf '%s' "$RESP" | tail -n 1)
+BODY=$(printf '%s' "$RESP" | sed '$d')
+
+# 3. 优先提取服务端 error 字段（HTTP 404/500 或 200 带 error 的情况）
+ERROR_MSG=$(printf '%s' "$BODY" | sed -n 's/.*"error":"\([^"]*\)".*/\1/p')
+
+if [ -n "$ERROR_MSG" ]; then
+	case "$ERROR_MSG" in
+		*"not initialized"*)
+			log_err "local password not initialized yet"
+			log_err "  - device has not completed remote auth (first login)"
+			log_err "  - use default root password until then"
+			;;
+		*)
+			log_err "xfrpc_loader error: $ERROR_MSG"
+			;;
+	esac
+	exit 1
+fi
+
+if [ "$HTTP_CODE" != "200" ]; then
+	log_err "xfrpc_loader returned HTTP $HTTP_CODE${BODY:+: $BODY}"
+	exit 1
+fi
+
+# 4. 解析 JSON 中的 password 字段（busybox 无 jq，用 sed 提取）
+PASSWORD=$(printf '%s' "$BODY" | sed -n 's/.*"password":"\([^"]*\)".*/\1/p')
+
+if [ -z "$PASSWORD" ]; then
+	log_err "no password in response${BODY:+: $BODY}"
+	exit 1
+fi
+
+# 5. 输出明文密码
 echo "$PASSWORD"
 exit 0

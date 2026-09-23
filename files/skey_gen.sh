@@ -31,16 +31,18 @@ SKEY_DIR="/etc/config/skey"
 mkdir -p "$SKEY_DIR"
 
 # ---- 生成 RSA-2048 密钥对 ----
+# 私钥缺失时重新生成；无论私钥是否新生成，公钥都无条件从私钥重新导出，
+# 确保公私钥永远配对（修复：旧逻辑只在公钥文件缺失时才导出，导致
+# 私钥重生成后公钥仍是旧的，公私钥永久错位，密文解不开）。
 
 if [ ! -f "$SKEY_DIR/private_key.pem" ]; then
     openssl genrsa -out "$SKEY_DIR/private_key.pem" 2048
     chmod 600 "$SKEY_DIR/private_key.pem"
 fi
 
-if [ ! -f "$SKEY_DIR/public_key.pem" ]; then
-    openssl rsa -in "$SKEY_DIR/private_key.pem" \
-        -pubout -out "$SKEY_DIR/public_key.pem"
-fi
+# 无条件从当前私钥重新导出公钥（覆盖可能过期的旧公钥）
+openssl rsa -in "$SKEY_DIR/private_key.pem" \
+    -pubout -out "$SKEY_DIR/public_key.pem" 2>/dev/null
 
 # ---- 生成 device_id ----
 # UUID V4 -> 16 字节二进制 -> BASE62 编码 -> 22 字符
