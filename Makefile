@@ -23,6 +23,8 @@
 # 首次下载后请记录实际的提交哈希，并填到 PKG_SOURCE_VERSION，
 # 同时用 "make package/xfrpc_loader/download V=s" 得到 PKG_MIRROR_HASH 填上。
 #
+# 也可用 GIT=0 跳过下载，直接编译本目录 src/ 下的本地源码。
+#
 
 include $(TOPDIR)/rules.mk
 
@@ -32,15 +34,23 @@ PKG_RELEASE:=1
 PKG_LICENSE:=Apache-2.0
 PKG_MAINTAINER:=Monkfish <5747844@qq.com>
 
-# ---- Git 源码来源 ----
-# PKG_SOURCE_PROTO:=git 时，OpenWrt 会按 PKG_SOURCE_VERSION 克隆整个 xfrpc_loader 仓库，
-# 克隆后整个仓库放在 $(PKG_BUILD_DIR)。
-# 源码在仓库内的 src/ 子目录，需通过 Build/Prepare 复制到构建根目录。
+# ---- 源码来源开关 ----
+# GIT=1（默认）：PKG_SOURCE_PROTO:=git 时，OpenWrt 会按 PKG_SOURCE_VERSION
+#   克隆 xfrpc_loader 仓库，克隆后内容放在 $(PKG_BUILD_DIR)。
+# GIT=0：不下载源码，直接使用本目录 src/ 下的本地源码。
+GIT ?= 0
+
+ifeq ($(GIT),1)
 PKG_SOURCE_PROTO:=git
 PKG_SOURCE_URL:=https://github.com/monkfish-iot/xfrpc_loader.git
 PKG_SOURCE_VERSION:=main
 PKG_SOURCE_DATE:=2026-08-26
 PKG_MIRROR_HASH:=skip
+else
+# 置为空（而不是完全不定义），避免 download.mk 里的 PKG_SOURCE ?= 默认值生效
+PKG_SOURCE:=
+PKG_SOURCE_PROTO:=
+endif
 
 PKG_SOURCE_SUBDIR:=$(PKG_NAME)-$(PKG_VERSION)
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_SOURCE_SUBDIR)
@@ -64,8 +74,8 @@ endif
 include $(INCLUDE_DIR)/package.mk
 
 define Package/$(PKG_NAME)
-  SECTION:=Monkfish
-  CATEGORY:=Monkfish Softwares
+  SECTION:=Monkfish-IOT
+  CATEGORY:=Monkfish-IOT Softwares
   DEPENDS:=+libevent2 +libcurl +libjson-c $(SKEY_PKG_DEPS) +libopenssl +luci-mod-rpc
   TITLE:=xfrpc loader daemon (built from git)
   URL:=https://github.com/monkfish-iot/xfrpc_loader
@@ -76,11 +86,21 @@ define Package/$(PKG_NAME)/description
   Source is fetched from the xfrpc_loader git repository (src/).
 endef
 
-# 源码从独立 git 仓库克隆后，C 源码位于仓库根目录，
-# 解包后的 $(PKG_BUILD_DIR) 即仓库根，无需额外复制。
+# GIT=1（默认）：源码已由 OpenWrt 解包到 $(PKG_BUILD_DIR)，直接使用。
+# GIT=0：把本目录 src/ 下的源码复制到 $(PKG_BUILD_DIR)
+#（package.mk 调用 Build/Prepare 前已 rm -rf + mkdir -p 该目录）。
+# 注意条件必须写在 define 之外：Build/Prepare 会被 package.mk 在
+# $(eval $(call BuildPackage,...)) 中展开二次解析，展开结果紧跟在 TAB 配方行之后，
+# 若 define 内部含 ifeq/else，会被当成 shell 命令而报 "extraneous 'else'"。
+ifeq ($(GIT),1)
 define Build/Prepare
 	$(call Build/Prepare/Default)
 endef
+else
+define Build/Prepare
+	$(CP) ./src/. $(PKG_BUILD_DIR)/
+endef
+endif
 
 TARGET_CFLAGS += -Wall -Wextra
 ifeq ($(LOCAL_SKEY),1)
@@ -101,12 +121,8 @@ define Package/$(PKG_NAME)/install
 	$(INSTALL_BIN) ./files/xfrpc_loader.init $(1)/etc/init.d/xfrpc_loader
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_DATA) ./files/xfrpc_loader.uci $(1)/etc/config/xfrpc_loader
-ifeq ($(LOCAL_SKEY),1)
-	$(INSTALL_BIN) ./files/skey_gen.sh $(1)/usr/bin/skey_gen.sh
-endif
-ifeq ($(INSTALL_PASSWD_SH),1)
-	$(INSTALL_BIN) ./files/show_luci_passwd.sh $(1)/usr/bin/show_luci_passwd.sh
-endif
+	$(if $(filter 1,$(LOCAL_SKEY)),$(INSTALL_BIN) ./files/skey_gen.sh $(1)/usr/bin/skey_gen.sh)
+	$(if $(filter 1,$(INSTALL_PASSWD_SH)),$(INSTALL_BIN) ./files/show_luci_passwd.sh $(1)/usr/bin/show_luci_passwd.sh)
 	$(INSTALL_DIR) $(1)/etc/nginx/conf.d
 	$(INSTALL_DATA) ./files/etc/nginx/conf.d/luci.conf $(1)/etc/nginx/conf.d/luci.conf
 endef

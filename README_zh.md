@@ -43,6 +43,7 @@ make -j$(nproc) V=s package/xfrpc_loader/compile
 可选构建参数：
 
 ```sh
+GIT=0                    # 不下载源码，使用本目录 src/ 下的本地源码（离线构建 / 调试）
 LOCAL_SKEY=1             # 默认：使用本地 OpenSSL 密钥（device_id 存 /etc/config/skey/）
 LOCAL_SKEY=0             # 使用厂商 libskey
 INSTALL_PASSWD_SH=0      # 不安装 show_luci_passwd.sh
