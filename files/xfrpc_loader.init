@@ -96,9 +96,23 @@ start_service() {
 		mkdir -p /var/lib/nginx/body; 
 	fi
 	# nginx 反代配置（/etc/nginx/conf.d/luci.conf）已随本包安装，
-	# 若 nginx 存在则重启一次使配置生效。
-	# 启动前确保 nginx 运行时目录存在，否则首次启动会因缺目录失败。
-	nginx 
+	# 若 nginx 已运行则 reload 使配置生效，否则启动；启动前确保运行时目录存在。
+	#
+	# ★ 关键修复：本函数运行在 rc.common 的 procd 锁区间内——start() 会先调用
+	#   procd_open_service，它用 fd 1000 对 /tmp/lock/procd_<svc>.lock 加了 flock。
+	#   若此处不关闭 fd 1000 就启动 nginx，nginx 会继承同一 flock 并长期持有，
+	#   之后任何需要 procd 锁的 init 动作（running/status/stop/reload）都会永久
+	#   阻塞在该 flock 上。其中 running 由 rpcd 调用，一旦卡住会阻塞 rpcd/ubus，
+	#   进而卡死固件升级流程（实测：会残留一个永久 hang 的
+	#   `/bin/sh /etc/rc.common /etc/init.d/xfrpc_loader running` 进程）。
+	#   故所有 nginx 调用都必须以 `1000>&-` 关闭继承来的锁 fd。
+	if [ -x /etc/init.d/nginx ]; then
+		/etc/init.d/nginx restart 1000>&- 2>/dev/null || true
+	elif pidof nginx >/dev/null 2>&1; then
+		nginx -s reload 1000>&- 2>/dev/null || true
+	else
+		nginx 1000>&- 2>/dev/null || true
+	fi
 
 	procd_open_instance
 	procd_set_param command /usr/bin/xfrpc_loader
@@ -109,7 +123,8 @@ start_service() {
 }
 
 reload_service() {
-	nginx -s reload 2>/dev/null || true
+	# 同样需关闭继承的 procd 锁 fd（此函数在 rc.common 的 reload 锁区间内执行）
+	nginx -s reload 1000>&- 2>/dev/null || true
 	stop
 	start
 }

@@ -11,7 +11,7 @@ config main 'main'
 	option max_join_retries '0'
 
 config auth 'auth'
-	option enabled              '0'
+	option enabled              '1'
 	option listen_port          '8888'
 	option remote_proto         'https'
 	option remote_host          ''
